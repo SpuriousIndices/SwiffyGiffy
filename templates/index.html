@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SwiffyGiffy — YouTube to GIF Studio</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Header & Source Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">SG</div>
+      <div>
+        <h1>SwiffyGiffy</h1>
+        <span class="subtitle">Local YouTube &amp; Video to GIF Studio</span>
+      </div>
+    </div>
+
+    <form id="yt-form" class="url-bar" autocomplete="off">
+      <div class="input-wrapper">
+        <svg class="yt-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        </svg>
+        <input
+          type="text"
+          id="yt-url-input"
+          placeholder="Paste a YouTube video or Shorts link (e.g. https://www.youtube.com/watch?v=...)"
+        />
+      </div>
+      <button type="submit" id="load-yt-btn" class="btn btn-primary">
+        Load Video
+      </button>
+      <label class="btn btn-secondary file-upload-label" title="Or load a local video file (.mp4, .webm, .mov)">
+        <input type="file" id="local-video-input" accept="video/*" hidden />
+        Upload File
+      </label>
+    </form>
+
+    <div class="topbar-actions">
+      <button type="button" id="open-folder-btn" class="btn btn-ghost" title="Open output_gifs folder in Windows Explorer">
+        📁 Output Folder
+      </button>
+    </div>
+  </header>
+
+  <!-- Loading Progress Banner -->
+  <div id="loading-banner" class="loading-banner hidden">
+    <div class="loading-info">
+      <span class="spinner"></span>
+      <span id="loading-message">Fetching video from YouTube...</span>
+    </div>
+    <div class="progress-track">
+      <div id="loading-progress-bar" class="progress-fill" style="width: 10%"></div>
+    </div>
+  </div>
+
+  <!-- Main Workspace -->
+  <main class="workspace">
+    <!-- Left / Center Column: Video Stage & Timeline -->
+    <section class="stage-column">
+      <div class="video-card">
+        <div class="video-header">
+          <div id="video-title-badge" class="video-title-badge">No video loaded — paste a YouTube link above or upload a video file</div>
+          <div id="video-meta-badge" class="video-meta-badge"></div>
+        </div>
+
+        <!-- Stage Wrapper with Interactive Overlays -->
+        <div class="stage-viewport" id="stage-viewport">
+          <div class="empty-stage" id="empty-stage">
+            <div class="empty-icon">🎬</div>
+            <h2>Ready to Create a GIF</h2>
+            <p>Paste any YouTube URL in the top bar and click <strong>Load Video</strong>, or upload a local video file to start trimming, cropping, and adding text overlays.</p>
+          </div>
+
+          <div class="video-container hidden" id="video-container">
+            <video id="video-player" playsinline preload="auto"></video>
+
+            <!-- Interactive Overlay Layer (matches video display rect) -->
+            <div id="interactive-overlay" class="interactive-overlay">
+              <!-- Darkened mask outside crop area -->
+              <div id="crop-box" class="crop-box hidden">
+                <div class="crop-grid-h"></div>
+                <div class="crop-grid-v"></div>
+                <div class="crop-dimensions-tag" id="crop-dimensions-tag">100% × 100%</div>
+                <!-- 8 Resize Handles -->
+                <div class="crop-handle nw" data-handle="nw"></div>
+                <div class="crop-handle n" data-handle="n"></div>
+                <div class="crop-handle ne" data-handle="ne"></div>
+                <div class="crop-handle e" data-handle="e"></div>
+                <div class="crop-handle se" data-handle="se"></div>
+                <div class="crop-handle s" data-handle="s"></div>
+                <div class="crop-handle sw" data-handle="sw"></div>
+                <div class="crop-handle w" data-handle="w"></div>
+              </div>
+
+              <!-- Live Draggable Text Overlays Container -->
+              <div id="text-overlays-stage" class="text-overlays-stage"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Playback & Timeline Trim Bar -->
+        <div class="timeline-panel" id="timeline-panel">
+          <div class="transport-row">
+            <div class="transport-left">
+              <button type="button" id="play-pause-btn" class="btn btn-icon" disabled title="Play / Pause (Space)">
+                ▶
+              </button>
+              <button type="button" id="restart-clip-btn" class="btn btn-sm btn-ghost" disabled title="Jump to Start Time">
+                ⏮ Start
+              </button>
+              <label class="checkbox-pill" title="Loop playback strictly between Start and End markers">
+                <input type="checkbox" id="loop-preview-toggle" checked />
+                <span>Loop Trim Range</span>
+              </label>
+            </div>
+
+            <div class="time-readout">
+              <span>Current: <strong id="current-time-label">0.00s</strong></span>
+              <span class="divider">|</span>
+              <span>Clip Length: <strong id="clip-duration-label" class="accent-text">5.00s</strong></span>
+              <span class="divider">|</span>
+              <span>Est. Frames: <strong id="est-frames-label">75</strong></span>
+            </div>
+
+            <div class="transport-right">
+              <button type="button" id="set-start-current-btn" class="btn btn-sm btn-secondary" disabled title="Set Start Time to current playhead position">
+                [ Set Start
+              </button>
+              <button type="button" id="set-end-current-btn" class="btn btn-sm btn-secondary" disabled title="Set End Time to current playhead position">
+                Set End ]
+              </button>
+            </div>
+          </div>
+
+          <!-- Visual Dual-Handle Timeline Track -->
+          <div class="timeline-track-wrapper" id="timeline-track-wrapper">
+            <div class="timeline-track" id="timeline-track">
+              <div class="timeline-unselected-left" id="timeline-unselected-left"></div>
+              <div class="timeline-selected-range" id="timeline-selected-range"></div>
+              <div class="timeline-unselected-right" id="timeline-unselected-right"></div>
+              <div class="timeline-handle timeline-handle-start" id="handle-start" title="Drag Start Time"></div>
+              <div class="timeline-handle timeline-handle-end" id="handle-end" title="Drag End Time"></div>
+              <div class="timeline-playhead" id="timeline-playhead"></div>
+            </div>
+            <div class="timeline-ticks">
+              <span id="tick-start">0:00</span>
+              <span id="tick-mid">--:--</span>
+              <span id="tick-end">0:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generated GIFs Gallery Drawer -->
+      <div class="gallery-card">
+        <div class="gallery-header">
+          <h3>✨ Generated GIFs (<span id="gallery-count">0</span>)</h3>
+          <span class="hint">Saved in <code>swiffygiffy_data/output_gifs</code></span>
+        </div>
+        <div id="gallery-grid" class="gallery-grid">
+          <div class="gallery-empty">Generated GIFs will appear here for instant preview &amp; download.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Studio Controls & Export -->
+    <aside class="inspector-column">
+      <div class="inspector-card">
+        <!-- Studio Tabs -->
+        <div class="tabs-nav">
+          <button type="button" class="tab-btn active" data-tab="tab-trim">⏱ Length &amp; Size</button>
+          <button type="button" class="tab-btn" data-tab="tab-crop">✂️ Crop</button>
+          <button type="button" class="tab-btn" data-tab="tab-text">🔤 Text</button>
+          <button type="button" class="tab-btn" data-tab="tab-filters">🎨 Filters</button>
+        </div>
+
+        <!-- TAB 1: Length, Speed, Loop & Resolution -->
+        <div id="tab-trim" class="tab-pane active">
+          <div class="control-group">
+            <label class="group-title">Clip Timing (Seconds)</label>
+            <div class="two-col">
+              <div class="field">
+                <span>Start Time (s)</span>
+                <div class="step-input">
+                  <button type="button" class="step-btn" data-step-target="start-time-input" data-step="-0.1">-0.1</button>
+                  <input type="number" id="start-time-input" min="0" step="0.1" value="0.0" />
+                  <button type="button" class="step-btn" data-step-target="start-time-input" data-step="0.1">+0.1</button>
+                </div>
+              </div>
+              <div class="field">
+                <span>End Time (s)</span>
+                <div class="step-input">
+                  <button type="button" class="step-btn" data-step-target="end-time-input" data-step="-0.1">-0.1</button>
+                  <input type="number" id="end-time-input" min="0.2" step="0.1" value="5.0" />
+                  <button type="button" class="step-btn" data-step-target="end-time-input" data-step="0.1">+0.1</button>
+                </div>
+              </div>
+            </div>
+            <div class="quick-lengths">
+              <span class="tiny-label">Quick Length:</span>
+              <button type="button" class="chip-btn" data-set-duration="2">2s</button>
+              <button type="button" class="chip-btn" data-set-duration="3">3s</button>
+              <button type="button" class="chip-btn" data-set-duration="5">5s</button>
+              <button type="button" class="chip-btn" data-set-duration="8">8s</button>
+              <button type="button" class="chip-btn" data-set-duration="10">10s</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="group-title">Output Size &amp; Frame Rate</label>
+            <div class="two-col">
+              <div class="field">
+                <span>Output Width</span>
+                <select id="output-width-select">
+                  <option value="320">320px (Compact / Chat)</option>
+                  <option value="480" selected>480px (Standard GIF)</option>
+                  <option value="600">600px (HD Social)</option>
+                  <option value="720">720px (Large HD)</option>
+                </select>
+              </div>
+              <div class="field">
+                <span>Frame Rate (FPS)</span>
+                <select id="fps-select">
+                  <option value="10">10 FPS (Small File)</option>
+                  <option value="15" selected>15 FPS (Balanced)</option>
+                  <option value="20">20 FPS (Smooth)</option>
+                  <option value="25">25 FPS (Ultra Smooth)</option>
+                  <option value="30">30 FPS (Max)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="group-title">Speed &amp; Loop Effect</label>
+            <div class="two-col">
+              <div class="field">
+                <span>Playback Speed</span>
+                <select id="speed-select">
+                  <option value="0.5">0.5x (Slow-Mo)</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1.0" selected>1.0x (Normal)</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x (Fast)</option>
+                  <option value="2.0">2.0x (Double Speed)</option>
+                </select>
+              </div>
+              <div class="field">
+                <span>Loop Mode</span>
+                <select id="loop-mode-select">
+                  <option value="normal" selected>Infinite Loop</option>
+                  <option value="bounce">Boomerang (Forward + Reverse)</option>
+                  <option value="reverse">Reverse Playback</option>
+                  <option value="once">Play Once (No Loop)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="group-title">Color Palette Quality</label>
+            <select id="quality-select">
+              <option value="high" selected>High Quality (2-Pass 256-Color Sierra Dither)</option>
+              <option value="medium">Medium (Balanced File Size)</option>
+              <option value="low">Compact (Smallest File Size)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- TAB 2: Crop Controls -->
+        <div id="tab-crop" class="tab-pane">
+          <div class="control-group">
+            <div class="toggle-row">
+              <div>
+                <div class="group-title" style="margin-bottom:2px">Enable Video Crop</div>
+                <div class="hint">Drag handles directly on the video preview</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="crop-enable-toggle" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="group-title">Aspect Ratio Presets</label>
+            <div class="preset-grid">
+              <button type="button" class="chip-btn active" data-aspect="free">Freeform</button>
+              <button type="button" class="chip-btn" data-aspect="1:1">1:1 Square</button>
+              <button type="button" class="chip-btn" data-aspect="16:9">16:9 Wide</button>
+              <button type="button" class="chip-btn" data-aspect="4:3">4:3 Classic</button>
+              <button type="button" class="chip-btn" data-aspect="9:16">9:16 Vertical</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="group-title">Crop Region Coordinates (%)</label>
+            <div class="two-col">
+              <div class="field">
+                <span>Left (X %)</span>
+                <input type="number" id="crop-x-input" min="0" max="90" step="1" value="10" />
+              </div>
+              <div class="field">
+                <span>Top (Y %)</span>
+                <input type="number" id="crop-y-input" min="0" max="90" step="1" value="10" />
+              </div>
+              <div class="field">
+                <span>Width (%)</span>
+                <input type="number" id="crop-w-input" min="10" max="100" step="1" value="80" />
+              </div>
+              <div class="field">
+                <span>Height (%)</span>
+                <input type="number" id="crop-h-input" min="10" max="100" step="1" value="80" />
+              </div>
+            </div>
+            <div class="row-actions" style="margin-top: 10px;">
+              <button type="button" id="center-crop-btn" class="btn btn-sm btn-secondary">Center Box</button>
+              <button type="button" id="reset-crop-btn" class="btn btn-sm btn-ghost">Reset Full Frame</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: Text Overlays -->
+        <div id="tab-text" class="tab-pane">
+          <div class="control-group">
+            <div class="group-header-row">
+              <label class="group-title" style="margin:0">Text Layers</label>
+              <div class="quick-text-btns">
+                <button type="button" id="add-top-text-btn" class="btn btn-sm btn-secondary">+ Top Text</button>
+                <button type="button" id="add-bottom-text-btn" class="btn btn-sm btn-primary">+ Bottom Text</button>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:4px">Tip: Drag any text directly on the video stage to position it!</p>
+            <div id="text-layers-list" class="text-layers-list"></div>
+          </div>
+
+          <!-- Active Text Layer Inspector -->
+          <div id="text-editor-panel" class="text-editor-panel hidden">
+            <div class="field">
+              <span>Caption Text (supports multiple lines)</span>
+              <textarea id="text-content-input" rows="2" placeholder="Enter your caption..."></textarea>
+            </div>
+
+            <div class="two-col">
+              <div class="field">
+                <span>Font Style</span>
+                <select id="text-font-select">
+                  <option value="impact">Impact (Meme Classic)</option>
+                  <option value="sans">Sans-Serif Bold</option>
+                  <option value="comic">Comic Bold</option>
+                  <option value="mono">Monospace</option>
+                  <option value="serif">Serif Bold</option>
+                </select>
+              </div>
+              <div class="field">
+                <span>Font Size (<strong id="font-size-val">40</strong>px)</span>
+                <input type="range" id="text-size-input" min="16" max="96" value="40" />
+              </div>
+            </div>
+
+            <div class="three-col">
+              <div class="field">
+                <span>Text Color</span>
+                <input type="color" id="text-color-input" value="#ffffff" />
+              </div>
+              <div class="field">
+                <span>Outline Color</span>
+                <input type="color" id="text-stroke-color-input" value="#000000" />
+              </div>
+              <div class="field">
+                <span>Outline Width</span>
+                <input type="number" id="text-stroke-width-input" min="0" max="12" value="3" />
+              </div>
+            </div>
+
+            <div class="two-col">
+              <div class="field">
+                <span>Background Box Color</span>
+                <input type="color" id="text-bg-color-input" value="#000000" />
+              </div>
+              <div class="field">
+                <span>Box Opacity (<strong id="bg-opacity-val">0%</strong>)</span>
+                <input type="range" id="text-bg-opacity-input" min="0" max="1" step="0.05" value="0" />
+              </div>
+            </div>
+
+            <div class="two-col">
+              <div class="field">
+                <span>Show From (Clip Sec)</span>
+                <input type="number" id="text-start-offset-input" min="0" step="0.1" value="0.0" />
+              </div>
+              <div class="field">
+                <span>Hide After (Clip Sec)</span>
+                <input type="number" id="text-end-offset-input" min="0.1" step="0.1" value="60.0" />
+              </div>
+            </div>
+
+            <div class="toggle-row" style="margin-top:6px">
+              <label class="checkbox-pill">
+                <input type="checkbox" id="text-uppercase-input" checked />
+                <span>ALL CAPS</span>
+              </label>
+              <button type="button" id="delete-text-layer-btn" class="btn btn-sm btn-danger">Delete Layer</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: Filters & Color Adjustments -->
+        <div id="tab-filters" class="tab-pane">
+          <div class="control-group">
+            <label class="group-title">Quick Filter Presets</label>
+            <div class="preset-grid">
+              <button type="button" class="chip-btn active" data-filter-preset="none">Normal</button>
+              <button type="button" class="chip-btn" data-filter-preset="vivid">Vivid Pop</button>
+              <button type="button" class="chip-btn" data-filter-preset="bw">Noir B&amp;W</button>
+              <button type="button" class="chip-btn" data-filter-preset="sepia">Vintage Sepia</button>
+              <button type="button" class="chip-btn" data-filter-preset="punch">High Contrast</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="field">
+              <span>Brightness (<strong id="brightness-val">0</strong>)</span>
+              <input type="range" id="filter-brightness" min="-0.4" max="0.4" step="0.05" value="0" />
+            </div>
+            <div class="field">
+              <span>Contrast (<strong id="contrast-val">1.0</strong>)</span>
+              <input type="range" id="filter-contrast" min="0.5" max="1.8" step="0.05" value="1.0" />
+            </div>
+            <div class="field">
+              <span>Saturation (<strong id="saturation-val">1.0</strong>)</span>
+              <input type="range" id="filter-saturation" min="0.0" max="2.5" step="0.1" value="1.0" />
+            </div>
+            <div class="two-col" style="margin-top:8px">
+              <label class="checkbox-pill">
+                <input type="checkbox" id="filter-grayscale" />
+                <span>Grayscale</span>
+              </label>
+              <label class="checkbox-pill">
+                <input type="checkbox" id="filter-sepia" />
+                <span>Sepia Tone</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create GIF Call-to-Action Footer -->
+        <div class="export-footer">
+          <button type="button" id="generate-gif-btn" class="btn btn-export" disabled>
+            ⚡ Create GIF
+          </button>
+          <div id="export-status" class="export-status hidden"></div>
+        </div>
+      </div>
+
+      <!-- Latest Generated GIF Result Card -->
+      <div id="latest-result-card" class="result-card hidden">
+        <div class="result-header">
+          <h4>🎉 Latest GIF Ready!</h4>
+          <span id="result-meta-badge" class="badge"></span>
+        </div>
+        <div class="result-preview-box">
+          <img id="result-gif-img" src="" alt="Generated GIF Preview" />
+        </div>
+        <div class="result-actions">
+          <a id="result-download-btn" href="#" download class="btn btn-primary" style="flex:1; text-align:center; text-decoration:none;">
+            ⬇ Download GIF
+          </a>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+

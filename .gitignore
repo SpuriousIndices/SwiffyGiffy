@@ -31,6 +31,7 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!SwiffyGiffy.spec
 
 # Installer logs
 pip-log.txt
@@ -218,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# SwiffyGiffy runtime cache & outputs
+swiffygiffy_data/
