@@ -8,9 +8,11 @@ import socket
 import tempfile
 import threading
 import subprocess
+import functools
 import webbrowser
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 from flask import (
     Flask,
     render_template,
@@ -56,9 +58,15 @@ def get_ffmpeg_path() -> str:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         # Check inside _MEIPASS/imageio_ffmpeg/binaries first
         meipass = Path(sys._MEIPASS)
-        candidates = list(meipass.rglob("ffmpeg*.exe"))
-        if candidates:
-            return str(candidates[0])
+        for candidate in meipass.rglob("ffmpeg*"):
+            if candidate.is_file() and candidate.suffix.lower() not in [".py", ".pyc", ".txt", ".json", ".md"]:
+                # Ensure executable permissions on Linux / macOS
+                if sys.platform != "win32":
+                    try:
+                        candidate.chmod(candidate.stat().st_mode | 0o755)
+                    except Exception:
+                        pass
+                return str(candidate)
     try:
         return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
@@ -138,38 +146,114 @@ def probe_video_dimensions_and_duration(video_path: Path, ffmpeg_exe: str) -> di
     return {"width": width, "height": height, "duration": round(duration, 2)}
 
 
-def resolve_windows_font(font_family: str, font_size: int) -> ImageFont.FreeTypeFont:
-    """Resolve a TTF font on Windows (or fallback cleanly)."""
-    font_map = {
-        "impact": ["impact.ttf", "arialbd.ttf", "seguiemj.ttf"],
-        "sans": ["arialbd.ttf", "segoeui.ttf", "arial.ttf", "calibri.ttf"],
-        "meme": ["impact.ttf", "arialbd.ttf"],
-        "mono": ["consolab.ttf", "consola.ttf", "courbd.ttf", "cour.ttf"],
-        "serif": ["georgiab.ttf", "georgia.ttf", "timesbd.ttf", "times.ttf"],
-        "comic": ["comicbd.ttf", "comic.ttf", "arialbd.ttf"],
-    }
-    candidates = font_map.get((font_family or "impact").lower(), font_map["impact"])
-    win_fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+FONT_CANDIDATES = {
+    "impact": [
+        "impact.ttf", "Impact.ttf", "Ubuntu-B.ttf", "DejaVuSans-Bold.ttf",
+        "LiberationSans-Bold.ttf", "FreeSansBold.ttf", "arialbd.ttf",
+    ],
+    "sans": [
+        "Ubuntu-B.ttf", "Ubuntu-R.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf",
+        "LiberationSans-Bold.ttf", "LiberationSans-Regular.ttf", "arialbd.ttf",
+        "segoeui.ttf", "arial.ttf", "calibri.ttf",
+    ],
+    "meme": [
+        "impact.ttf", "Impact.ttf", "Ubuntu-B.ttf", "DejaVuSans-Bold.ttf",
+        "LiberationSans-Bold.ttf", "FreeSansBold.ttf", "arialbd.ttf",
+    ],
+    "mono": [
+        "UbuntuMono-B.ttf", "UbuntuMono-R.ttf", "DejaVuSansMono-Bold.ttf",
+        "DejaVuSansMono.ttf", "LiberationMono-Bold.ttf", "LiberationMono-Regular.ttf",
+        "consolab.ttf", "consola.ttf", "courbd.ttf", "cour.ttf",
+    ],
+    "serif": [
+        "DejaVuSerif-Bold.ttf", "DejaVuSerif.ttf", "LiberationSerif-Bold.ttf",
+        "LiberationSerif-Regular.ttf", "georgiab.ttf", "georgia.ttf",
+        "timesbd.ttf", "times.ttf",
+    ],
+    "comic": [
+        "comicbd.ttf", "comic.ttf", "ComicRelief.ttf", "Ubuntu-B.ttf",
+        "DejaVuSans-Bold.ttf", "arialbd.ttf",
+    ],
+}
 
+
+@functools.lru_cache(maxsize=32)
+def get_system_font_dirs() -> tuple:
+    """Return common font directories for Windows, Linux (Mint/Ubuntu), or macOS."""
+    dirs = []
+    if sys.platform == "win32":
+        dirs.append(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts")
+    else:
+        for p in [
+            Path("/usr/share/fonts"),
+            Path("/usr/local/share/fonts"),
+            Path.home() / ".local/share/fonts",
+            Path.home() / ".fonts",
+        ]:
+            if p.exists():
+                dirs.append(p)
+        if sys.platform == "darwin":
+            for p in [
+                Path("/System/Library/Fonts"),
+                Path("/Library/Fonts"),
+                Path.home() / "Library/Fonts",
+            ]:
+                if p.exists():
+                    dirs.append(p)
+    return tuple(dirs)
+
+
+@functools.lru_cache(maxsize=128)
+def find_font_file(target_filename: str) -> Optional[str]:
+    """Search for a font file by filename in system font paths with caching."""
+    target_lower = target_filename.lower()
+    for fdir in get_system_font_dirs():
+        if not fdir.exists():
+            continue
+        direct = fdir / target_filename
+        if direct.exists():
+            return str(direct)
+        try:
+            for item in fdir.rglob("*.ttf"):
+                if item.name.lower() == target_lower:
+                    return str(item)
+            for item in fdir.rglob("*.otf"):
+                if item.name.lower() == target_lower:
+                    return str(item)
+        except Exception:
+            continue
+    return None
+
+
+def resolve_font(font_family: str, font_size: int) -> ImageFont.FreeTypeFont:
+    """Resolve a TTF/OTF font across Windows, Linux (Ubuntu, Mint), and macOS."""
+    candidates = FONT_CANDIDATES.get((font_family or "impact").lower(), FONT_CANDIDATES["impact"])
+
+    # 1. Search cached system font paths
     for fname in candidates:
-        fpath = win_fonts / fname
-        if fpath.exists():
+        found_path = find_font_file(fname)
+        if found_path:
             try:
-                return ImageFont.truetype(str(fpath), size=max(10, int(font_size)))
+                return ImageFont.truetype(found_path, size=max(10, int(font_size)))
             except Exception:
                 continue
 
-    # Try direct name in Pillow
+    # 2. Try direct name lookup through Pillow
     for fname in candidates:
         try:
             return ImageFont.truetype(fname, size=max(10, int(font_size)))
         except Exception:
             continue
 
+    # 3. Fallback to Pillow default
     try:
         return ImageFont.load_default(size=max(10, int(font_size)))
     except TypeError:
         return ImageFont.load_default()
+
+
+# Backward compatibility alias
+resolve_windows_font = resolve_font
 
 
 def hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
@@ -861,8 +945,13 @@ def delete_output_gif(filename: str):
 @app.route("/api/open-output-folder", methods=["POST"])
 def api_open_output_folder():
     try:
-        if os.name == "nt":
+        if sys.platform == "win32":
             os.startfile(str(OUTPUT_DIR))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(OUTPUT_DIR)])
+        else:
+            # Linux (Ubuntu, Linux Mint, etc.)
+            subprocess.Popen(["xdg-open", str(OUTPUT_DIR)])
         return jsonify({"opened": str(OUTPUT_DIR)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

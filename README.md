@@ -1,6 +1,6 @@
 # SwiffyGiffy — Local YouTube & Video to GIF Studio
 
-**SwiffyGiffy** is a self-contained local web application for creating high-quality GIFs from YouTube links (or local video files). It packages Python, Flask, `yt-dlp`, Pillow, and a static `FFmpeg` binary into a single portable **`SwiffyGiffy.exe`** executable that anyone can double-click to start the studio in their browser—with zero external setup required.
+**SwiffyGiffy** is a self-contained local web application for creating high-quality GIFs from YouTube links (or local video files). It packages Python, Flask, `yt-dlp`, Pillow, and a static `FFmpeg` binary into a single portable executable for **Windows** (`.exe`) and **Linux** (`.AppImage` / standalone binary) that anyone can double-click to start the studio in their browser—with zero external setup required.
 
 ---
 
@@ -17,7 +17,7 @@
 - **Draggable Multi-Layer Text Overlays**:
   - Add Top Meme Text, Bottom Meme Text, or multiple custom caption layers.
   - Drag text layers directly over the video stage to position them anywhere.
-  - Customize font family (`Impact`, `Sans-Serif Bold`, `Comic`, `Monospace`, `Serif`), font size, text color, outline color & thickness, background box color & opacity, and per-layer start/end timing within the clip.
+  - Cross-platform system font discovery (Windows, Ubuntu, Linux Mint fonts) with custom styling, colors, outlines, and visibility intervals.
 - **Speed, Loop Modes & Color Filters**:
   - Playback speed control (`0.5x` slow-mo to `2.0x` double speed).
   - Loop modes: **Infinite Loop**, **Boomerang (Forward + Reverse)**, **Reverse Playback**, or **Play Once**.
@@ -27,24 +27,65 @@
 
 ---
 
-## 🚀 Running the Standalone `.exe`
+## 🚀 Running on Windows
 
-1. Locate **`dist/SwiffyGiffy.exe`**.
-2. Share **`SwiffyGiffy.exe`** with anyone on Windows (no Python or FFmpeg installation needed on their PC).
-3. Double-click **`SwiffyGiffy.exe`** — it starts the local server and automatically opens `http://127.0.0.1:5175` in your default web browser.
-4. Generated GIFs are saved to `swiffygiffy_data/output_gifs` next to the `.exe` (and can also be downloaded directly from the web UI or opened via the **📁 Output Folder** button).
+1. Double-click **`SwiffyGiffy.exe`** (found in `dist/` or downloaded from GitHub Releases / Actions).
+2. The local server starts and automatically opens `http://127.0.0.1:5175` in your default browser.
+3. Generated GIFs are saved to `swiffygiffy_data/output_gifs` next to the `.exe`.
 
 ---
 
-## 🛠️ Running from Source or Rebuilding the `.exe`
+## 🐧 Running on Linux (Ubuntu, Linux Mint & Debian)
 
-### Run from Python source
+### Option A: AppImage (Recommended for Double-Click)
+1. Download **`SwiffyGiffy-x86_64.AppImage`**.
+2. Make it executable:
+   - **Via GUI**: Right-click the `.AppImage` → **Properties** → **Permissions** tab → Check **"Allow executing file as program"**.
+   - **Via Terminal**: `chmod +x SwiffyGiffy-x86_64.AppImage`
+3. **Double-click** the file to launch!
+
+### Option B: Tarball Bundle (`.tar.gz`)
+1. Extract `SwiffyGiffy-linux-x86_64.tar.gz`.
+2. Inside the extracted folder:
+   - Double-click **`SwiffyGiffy.desktop`** (on Ubuntu GNOME, right-click and choose **"Allow Launching"** the first time).
+   - Or double-click **`run.sh`**.
+   - To add SwiffyGiffy directly into your Linux Mint or Ubuntu Applications menu & Desktop, run `./install-desktop-launcher.sh`.
+
+---
+
+## 🛠️ Building From Source
+
+### Windows
 ```powershell
+# Run from source
 .\.venv\Scripts\python.exe app.py
+
+# Build dist/SwiffyGiffy.exe
+.\.venv\Scripts\python.exe build_exe.py
+# Or double-click build_exe.bat
 ```
 
-### Rebuild `dist/SwiffyGiffy.exe`
-```powershell
-.\.venv\Scripts\python.exe build_exe.py
+### Linux (Ubuntu / Mint)
+```bash
+# Run from source
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+
+# Build standalone binary & desktop bundle (dist/SwiffyGiffy)
+./build_linux.sh
+
+# Package as single-file AppImage (dist/SwiffyGiffy-x86_64.AppImage)
+./build_appimage.sh
 ```
-Or double-click [`build_exe.bat`](build_exe.bat).
+
+---
+
+## 🤖 Automated CI/CD Builds (GitHub Actions)
+
+This repository includes a GitHub Actions workflow (`.github/workflows/build.yml`) that automatically builds both:
+- **`SwiffyGiffy.exe`** (Windows x64)
+- **`SwiffyGiffy-x86_64.AppImage`** and **`SwiffyGiffy-linux-x86_64.tar.gz`** (Linux x86_64, built on Ubuntu LTS)
+
+Whenever you push commits or open a PR, download the ready-to-run executables from the GitHub Actions **Artifacts** section.
